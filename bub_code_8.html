@@ -1,0 +1,451 @@
+
+
+<!-- -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+
+<!--this code was apated from Gil Bub's lab webpage by Ila Ghoshal and Emma Borsier-->
+</head><body>
+<h3> BIOL 309 final project</h3>
+<p>active (red):</p>
+<p id="act">ACT=00</p>
+<p>inactive (green):</p>
+<p id="inact">INACT=00</p>
+<p>refractory (blue):</p>
+<p id="ref">REF=00</p>
+<p>wait (yellow):</p>
+<p id="wait">WAIT=00</p>
+<p> total:</p>
+<p id="tot">TOT=00</p>
+
+<label for="density">Initial Density</label>
+<input type="range" id="density" name="density" min="0" max="1" value="0.5" step="0.01" onChange="updateDensityRange();"> 
+<p></p>
+<button onclick="start()">start</button><button onclick="stop()">stop</button><button onclick="blank()">clear</button><button onclick="reset()">random</button><button onclick="csv()">save (csv)</button><br>
+<canvas id="myCanvas" width="1000" height="1000" style="border:1px solid #d3d3d3;">
+Your browser does not support the HTML5 canvas tag.</canvas>
+<br>
+<canvas id="myPlot" width="1000" height="200"></canvas>
+
+<script>
+var radius = 3; //radius of Moore neighbourhood
+var dim = 50; //dimension of grid
+var time_inter = 100; //duration of timestep (in ms)
+var activ_prob = 0.1; //probability of activation if conditions are not met
+//var inact_prob = 0.5; 
+var init_active = 0.3; //initial proportion of active cells
+var nb_neighbours = (2*radius+1)^2-1;
+var neighbour_threshold = 0.3;
+var max_neighbours = neighbour_threshold*nb_neighbours;
+var initialDensity = 0.9;
+//var initialDensity = document.getElementById("density").value;
+var move_prob = 0.25;
+var header = `Inactive,Active,Refractory,Wait,initial density =,${initialDensity},initial active =, ${init_active}, dimension =,${D},activation probability =,${activ_prob}, neighbourhood radius =, ${radius},max active neighbours =,${max_neighbours}\n`;
+var csv_str = header;
+var nb_neighbours = (2*radius+1)^2-1;
+var D=dim+2*radius; 
+var S=1000/D;
+var A=new Array(D);
+var B=new Array(D);
+var mX=0;
+var mY=0;
+var mousePX=0;
+var mousePY=0;
+var lastmousePX=0;
+var lastmousePY=0;
+var mouseHover=0;
+
+
+var maxB=1;
+var maxR=1;
+var maxG=1; 
+var maxY=1;
+
+for (var i=0;i<D;i++) A[i]=new Array(D);
+
+for (var i=0;i<D;i++) B[i]=new Array(D);
+
+console.log("init")
+var _gs=[0];
+var _rs=[0];
+var _bs=[0];
+var _ys=[0];
+var _max=[0];
+var _min=[0];
+
+function blank(){
+ stop();
+ csv_str = `Inactive,Active,Refractory,Wait,initial density =,${initialDensity}, initial active =, ${init_active}, dimension =,${D},activation probability =,${activ_prob}, neighbourhood radius =, ${radius},max active neighbours =,${max_neighbours}\n`;
+ initarray(0);
+ draw();
+ }
+
+function reset(){
+  stop();
+  initialDensity = document.getElementById("density").value;
+  initarray(initialDensity);
+  draw();
+ }
+
+function getMousePos(canvas,evt){
+ var rect=canvas.getBoundingClientRect();
+
+  Mx=evt.clientX-rect.left;
+  My=evt.clientY-rect.top;
+
+}
+
+
+function placepattern(pattern,x,y){
+ strs=pattern.split("N");
+ for (var i=0;i<strs.length;i++){
+  var tmp=strs[i];
+  var counter=0;
+  for (var p=0; p<tmp.length;p++){
+   var ch=tmp.charAt(p);
+   if (ch=='.') {A[x+p][y+i]=0;B[x+p][y+i]=0;}
+   if (ch=='O') {A[x+p][y+i]=1;B[x+p][y+i]=1;}
+ }
+ }
+}
+
+
+function copyarray(){
+ for (var i=0;i<D;i++){
+  for (var j=0;j<D;j++){
+   A[i][j]=B[i][j];
+   B[i][j]=0;
+   }
+  }
+ }
+
+function initarray(p){
+for (var i=0;i<D;i++){
+  for (var j=0;j<D;j++){
+   A[i][j]=0;
+   if (Math.random()<p){
+    A[i][j]=1;
+    if (Math.random()<init_active)A[i][j]=2; //((i%2==0) && (j%2==0)) || ((i%2==1) && (j%2==1))
+    }
+
+
+   B[i][j]=0;
+   }
+  }
+ }
+
+function inactCond(i,j){
+ B[i][j]=3;
+ var act_nb = 0;
+ for (var x=-2;x<=2;x++){
+  for (var y=-2;y<=2;y++){
+	if (x!=0 || y!=0){
+		
+	   if (A[i+x][j+y]==2){
+			act_nb +=1;
+		}
+	}
+    if (act_nb<max_neighbours) B[i][j]=3; //else B[i][j]=2;
+
+    }
+  }
+  //v=Math.random();
+  //if (v>0.1) B[i][j]=3;
+ }
+
+function actToRef(i,j){
+	B[i][j]=3;
+}
+
+
+function inactToAct(i,j){
+  B[i][j]=1;
+ 
+    
+ v=Math.random();
+ if (v<activ_prob) B[i][j]=2;
+ 
+ if (B[i][j] == 1) {
+   act_nb = 0;
+   inact_nb = 0;
+   for (var x=-radius;x<=radius;x++){
+    for (var y=-radius;y<=radius;y++){
+      if (x!=0 || y!=0){
+		
+	    if (A[i+x][j+y]!=2){
+	 		inact_nb +=1;
+		} 
+	    else if (A[i+x][j+y]==2){
+		   act_nb += 1;
+	    }
+			
+	 }
+    }
+   }
+  //console.log(act_nb);
+  }
+  
+  //if (act_nb==3 || act_nb==4) {
+//	B[i][j] =2;
+  //}
+  //if (inact_nb>22 || inact_nb<3) {
+  x=Math.random();
+  if ((act_nb >= max_neighbours) || (x<0.1)){
+	B[i][j] = 1;
+  }
+  else if (act_nb < max_neighbours){
+	B[i][j] = 2;
+ }
+}
+function waitToAct(i,j){
+	B[i][j] = 2;
+}
+
+function refToRef(i,j){
+	B[i][j] = 5;
+}
+
+function refToInact(i,j){
+	B[i][j] = 1;
+	//B[i][j] = 3;
+	//v = Math.random();
+	//if(v<inact_prob){
+	//	B[i][j] = 1;
+	//}
+	
+}
+
+
+function move(i,j,a){
+  B[i][j]=a;
+  v=Math.random();
+  x=0;
+  y=0;
+  if (v<0.25){x=0;y=-1;}
+  if ((v>=0.25)&&(x<0.5)){x=0;y=1;}
+  if ((v>=0.5)&&(v<0.75)){y=0;x=-1;}
+  if (v>=0.75){y=0;x=1;}
+  p=i-x;
+  q=j-y;
+  w=Math.random()
+  if (w>move_prob) {p=i;q=j;}
+  if ((radius<p) && (p<D-radius) && (radius<q) && (q<D-radius)){
+	if ((A[p][q]==0)&&(B[p][q]==0)){
+	
+	   B[i][j]=0;
+	   B[p][q]=a;
+	} else {
+		B[i][j] = a;
+	}
+  }
+}
+
+var ti=0;
+function update(){
+ totG=0;
+ totR=0;
+ totB = 0;
+ totY = 0;
+ for (var x=radius;x<D-radius;x++){
+  for (var y=radius;y<D-radius;y++){
+    if (A[x][y]==1) {inactToAct(x,y); totG+=1;}
+    if (A[x][y]==2) {actToRef(x,y); totR+=1;}
+	if (A[x][y]==3) {refToRef(x,y); totB+=1;}
+	if (A[x][y]==4) {waitToAct(x,y); totY+=1;}
+	if (A[x][y]==5) {refToInact(x,y); totB+=1;}
+
+    }
+  }
+ copyarray();
+ for (var x=radius+1;x<D-radius+1;x++){
+  for (var y=radius+1;y<D-radius+1;y++){
+   if (A[x][y]==1) move(x,y,1);
+   if (A[x][y]==2) move(x,y,2);
+   if (A[x][y]==3) move(x,y,3);
+   if (A[x][y]==4) move(x,y,4); 
+   if (A[x][y]==5) move(x,y,5);
+
+  }
+ }
+
+ copyarray();
+ _gs[ti]=totG;
+ _rs[ti]=totR;
+ _bs[ti]=totB;
+ _ys[ti]=totY;
+
+ _max[ti] = Math.max(totG,totR,totB,totY);
+ _min[ti] = Math.max(totG,totR,totB,totY);
+
+ ti+=1;
+ document.getElementById("inact").innerHTML = totG;
+ document.getElementById("act").innerHTML = totR;
+ document.getElementById("ref").innerHTML = totB;
+ document.getElementById("wait").innerHTML = totY;
+ document.getElementById("tot").innerHTML = totB+totG+totR+totY;
+ 
+ 
+
+ 
+ if (totG>maxG) maxG=totG;
+ if (totR>maxR) maxR=totR;
+ if (totB>maxB) maxB=totB;
+ if(totY>maxY) maxY=totY;
+
+
+ if (ti%10==0) plot(ti,_gs,_rs, _bs, _ys);
+ if (ti>=1000) ti=0;
+ }
+
+
+initarray(initialDensity);
+
+var id = setInterval(iterate, time_inter);
+var c = document.getElementById("myCanvas");
+c.addEventListener("click",onClick,false);
+
+var ctx = c.getContext("2d");
+
+var pl=document.getElementById("myPlot");
+var ptx=pl.getContext("2d");
+
+
+
+function onClick(e){
+ getMousePos(document.getElementById("myCanvas"),e);
+ var xp=Math.floor(Mx/S);
+ var yp=Math.floor(My/S);
+ var v=0;
+ if (A[xp][yp]==0) v=1;
+ if (A[xp][yp]==1) v=2;
+ if (A[xp][yp]==2) v=0;
+ B[xp][yp]=v;
+ A[xp][yp]=v;
+ draw();
+ }
+
+
+function draw(){
+ var x;
+ var y;
+ ctx.clearRect(0, 0, c.width, c.height);
+ ctx.beginPath();
+ for (x=0;x<D;x++){ ctx.moveTo(x*S,0); ctx.lineTo(x*S,D*S);}
+ for (y=0;y<D;y++){ ctx.moveTo(0,y*S); ctx.lineTo(D*S,y*S);}
+ ctx.strokeStyle="gray";
+ ctx.stroke();
+ ctx.closePath();
+ ctx.beginPath();
+ ctx.fillStyle="gray";
+ for (x=0;x<D;x++){
+  for (y=0;y<D;y++){
+   if (A[x][y]==1){
+       ctx.fillRect(x*S,y*S,S,S);
+       }
+    }
+  }
+ ctx.fillStyle="red";
+ for (x=0;x<D;x++){
+  for (y=0;y<D;y++){
+   if (A[x][y]==2){
+       ctx.fillRect(x*S,y*S,S,S);
+       }
+    }
+ }
+ctx.fillStyle="pink";
+ for (x=0;x<D;x++){
+  for (y=0;y<D;y++){
+   if (A[x][y]==3 || A[x][y]==5){
+       ctx.fillRect(x*S,y*S,S,S);
+       }
+    }
+  }
+
+ ctx.fillStyle="yellow";
+ for (x=0;x<D;x++){
+  for (y=0;y<D;y++){
+   if (A[x][y]==4){
+       ctx.fillRect(x*S,y*S,S,S);
+       }
+    }
+  }
+
+  ctx.stroke();
+  ctx.closePath();
+  }
+
+
+function iterate(){
+  draw();
+  update();
+  csv_str = csv_str.concat(totG, ',', totR, ',', totB, ',', totY, "\n");
+  console.log(totG, ',', totR, ',', totB,',', totY)
+}
+
+function stop(){
+ clearInterval(id);
+ 
+ //console.save(csv_str, 'test.csv');
+}
+
+function csv(){
+  stop();
+  console.save(csv_str, 'test.csv');
+}
+
+function start(){
+ id = setInterval(iterate, time_inter);
+}
+
+
+
+function plot(ti, ys1,ys2,ys3){
+ console.log("plotting");
+
+ ptx.clearRect(0, 0, pl.width, pl.height);
+ ptx.beginPath();
+ ptx.moveTo(0,50);
+ for (x=0;x<ti;x++){ ptx.lineTo(x,0.5*(maxG-Math.round(ys1[x])));} //0.5*(maxG-Math.round(ys1[x]))
+ ptx.strokeStyle="black";
+ ptx.stroke();
+ ptx.closePath();
+ ptx.beginPath();
+ ptx.moveTo(0,50);
+ ptx.moveTo(0,50);
+ for (x=0;x<ti;x++){ ptx.lineTo(x,0.5*(maxG-Math.round(ys2[x])));} //0.5*(maxG-Math.round(ys2[x]))
+ ptx.strokeStyle="grey";
+ ptx.stroke();
+ ptx.closePath();
+
+}
+
+
+(function(console){
+
+    console.save = function(data, filename){
+
+        if(!data) {
+            console.error('Console.save: No data')
+            return;
+        }
+
+        if(!filename) filename = 'console.json'
+
+        if(typeof data === "object"){
+            data = JSON.stringify(data, undefined, 4)
+        }
+
+        var blob = new Blob([data], {type: 'text/json'}),
+            e    = document.createEvent('MouseEvents'),
+            a    = document.createElement('a')
+
+        a.download = filename
+        a.href = window.URL.createObjectURL(blob)
+        a.dataset.downloadurl =  ['text/json', a.download, a.href].join(':')
+        e.initMouseEvent('click', true, false, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null)
+        a.dispatchEvent(e)
+    }
+})(console)
+</script>
+
+
+</body></html>
